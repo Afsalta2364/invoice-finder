@@ -52,19 +52,14 @@ if uploaded_file is not None:
 
             df_processed['Total Value'] = df_processed['Rent As per Contract'].fillna(0) + df_processed['Service as per Contract'].fillna(0)
 
-            # --- NEW SECTION: FORMAT DATE COLUMNS ---
-            # Define the columns that contain dates
+            # --- FORMAT DATE COLUMNS (Updated) ---
             date_columns = ['Start Date', 'End Date']
             
             for col in date_columns:
-                # First, convert the column to datetime objects (this handles various input formats)
-                # 'errors='coerce'' will turn any un-parseable dates into NaT (Not a Time)
                 df_processed[col] = pd.to_datetime(df_processed[col], errors='coerce')
                 
-                # Then, format the datetime objects to 'YYYY-MM-DD' string format
-                # .dt accessor is available for series with datetime objects
-                # We use .fillna('') to show empty strings for any NaT values
-                df_processed[col] = df_processed[col].dt.strftime('%Y-%m-%d').fillna('')
+                # *** THIS IS THE ONLY LINE THAT CHANGED ***
+                df_processed[col] = df_processed[col].dt.strftime('%d-%m-%Y').fillna('')
             # -------------------------------------------
 
             # --- DISPLAY THE RESULTS ---
