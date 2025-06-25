@@ -21,33 +21,23 @@ def convert_df_to_csv(df):
 
 def extract_code_from_ref(reference):
     """
-    Extracts a contract code with a two-step, robust process.
+    Finds the last occurrence of the pattern 'CODE/NUMBER' in a string.
     - 'JA588/AUG24/RIS/125'  -> 'RIS/125'
     - 'R25/KSV/227 - 6'       -> 'KSV/227'
     - 'Y22/S&A/261 - 10'      -> 'S&A/261'
     - 'Y22/NAE/125-10Feb'     -> 'NAE/125'
+    - 'B23/INN/136-1Feb'      -> 'INN/136'
     """
     if not isinstance(reference, str):
         return ""
 
-    # STEP 1: Find the starting point of the code
-    pattern = r'[A-Z][A-Z0-9&_-]*'
-    codes_found = re.findall(pattern, reference)
-    if not codes_found:
-        return ""
+    pattern = r'[A-Z0-9&_-]+/\d+'
+    matches = re.findall(pattern, reference)
 
-    last_code_part = codes_found[-1]
-    start_index = reference.rfind(last_code_part)
-    raw_result = reference[start_index:]
-
-    # STEP 2: Clean the end by positively identifying the part to keep
-    match = re.search(r'.*/\d+', raw_result)
-
-    if match:
-        return match.group(0).strip()
+    if matches:
+        return matches[-1]
     else:
-        # Fallback for codes that might not have a number part
-        return raw_result.split(' ', 1)[0].strip()
+        return ""
 
 
 # --- APP TITLE ---
