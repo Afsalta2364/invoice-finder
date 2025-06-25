@@ -11,10 +11,28 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- HELPER FUNCTION TO CONVERT DF TO CSV FOR DOWNLOAD ---
+# --- HELPER FUNCTIONS ---
+
 @st.cache_data
 def convert_df_to_csv(df):
+    """Converts a DataFrame to a CSV file for downloading."""
     return df.to_csv(index=False).encode('utf-8')
+
+def extract_code_from_ref(reference):
+    """
+    Extracts the part of the string after the second '/'.
+    Example: 'JA588/AUG24/RIS/125' -> 'RIS/125'
+    """
+    if not isinstance(reference, str):
+        return "" # Return empty string if data is not a string (e.g., NaN)
+    
+    parts = reference.split('/')
+    if len(parts) > 2:
+        # Join all parts from the third element (index 2) onwards
+        return '/'.join(parts[2:])
+    else:
+        # Return empty or the original if not in the expected format
+        return "" 
 
 # --- APP TITLE AND DESCRIPTION ---
 st.title("📄 Tenancy Contract Processor")
@@ -50,25 +68,40 @@ if uploaded_file is not None:
         else:
             df_processed = df[columns_to_keep].copy()
 
+            # --- Calculation and Formatting ---
             df_processed['Total Value'] = df_processed['Rent As per Contract'].fillna(0) + df_processed['Service as per Contract'].fillna(0)
-
-            # --- FORMAT DATE COLUMNS (Updated) ---
-            date_columns = ['Start Date', 'End Date']
             
+            date_columns = ['Start Date', 'End Date']
             for col in date_columns:
                 df_processed[col] = pd.to_datetime(df_processed[col], errors='coerce')
-                
-                # *** THIS IS THE ONLY LINE THAT CHANGED ***
                 df_processed[col] = df_processed[col].dt.strftime('%d-%m-%Y').fillna('')
-            # -------------------------------------------
+
+            # --- NEW: EXTRACT CONTRACT CODE ---
+            df_processed['Contract Code'] = df_processed['Contract Reference'].apply(extract_code_from_ref)
+            # ----------------------------------
+
 
             # --- DISPLAY THE RESULTS ---
-            st.header("Processed Contract Data")
-            st.write("Here is the reframed table with the 'Total Value' column and formatted dates.")
+
+            # --- NEW: SUMMARY OVERVIEW TABLE ---
+            st.header("✨ Summary Overview")
+            st.write("A quick overview with the extracted contract codes.")
             
+            # Create a smaller DataFrame for the summary view
+            summary_df = df_processed[['Tenants', 'Contract Reference', 'Contract Code']]
+            st.dataframe(summary_df, use_container_width=True)
+            # ----------------------------------
+
+
+            st.header("Processed Contract Data (Full)")
+            st.write("Here is the complete table including the new 'Contract Code' column.")
+            
+            # Display the full processed DataFrame
             st.dataframe(df_processed)
 
+
             # --- DOWNLOAD BUTTON ---
+            # The downloadable CSV will now automatically include the new 'Contract Code' column
             csv_data = convert_df_to_csv(df_processed)
 
             st.download_button(
