@@ -97,20 +97,30 @@ with col2:
                 initial_invoice_count = len(df2_invoices)
                 
                 df2_invoices['Contract Code'] = df2_invoices['No.'].apply(extract_code_from_ref)
-                
                 df2_invoices['Date'] = pd.to_datetime(df2_invoices['Date'], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
-                
                 df2_final = df2_invoices[['Date', 'Name', 'No.', 'Contract Code', 'Amount']]
 
                 st.subheader("Count Check")
                 metric_col1, metric_col2 = st.columns(2)
                 metric_col1.metric("Total Invoices in File", initial_invoice_count)
-                
-                # --- THIS IS THE UPDATED METRIC ---
-                # Count rows where a contract code was successfully extracted
                 extracted_code_count = (df2_final['Contract Code'] != '').sum()
                 metric_col2.metric("Total Codes Extracted", extracted_code_count)
-                # -----------------------------------
+
+                # --- NEW: IDENTIFY AND DISPLAY MISSING CODES ---
+                st.subheader("⚠️ Invoices with Extraction Issues")
+                missing_codes_df = df2_final[df2_final['Contract Code'] == '']
+                num_missing = len(missing_codes_df)
+
+                with st.expander(f"Found {num_missing} invoices with issues. Click to see details."):
+                    if not missing_codes_df.empty:
+                        st.warning(
+                            "The following invoices could not be processed automatically. "
+                            "Review the 'No.' column for formatting issues."
+                        )
+                        st.dataframe(missing_codes_df[['Date', 'Name', 'No.', 'Amount']])
+                    else:
+                        st.success("✅ Great! All invoices have a valid, extractable contract code.")
+                # --- END OF NEW SECTION ---
 
                 st.subheader("Processed Invoice Data")
                 st.dataframe(df2_final)
