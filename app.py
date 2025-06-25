@@ -3,6 +3,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import re  # Import the regular expression module
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -12,15 +13,41 @@ st.set_page_config(
 )
 
 # --- HELPER FUNCTIONS ---
+
 @st.cache_data
 def convert_df_to_csv(df):
+    """Converts a DataFrame to a CSV file for downloading."""
     return df.to_csv(index=False).encode('utf-8')
 
 def extract_code_from_ref(reference):
-    if not isinstance(reference, str): return ""
-    parts = reference.split('/')
-    if len(parts) > 2: return '/'.join(parts[2:])
-    else: return ""
+    """
+    Extracts a contract code based on finding the last 3-letter uppercase block.
+    - 'JA588/AUG24/RIS/125' -> 'RIS/125'
+    - 'R25/KSV/227 - 6'      -> 'KSV/227'
+    - 'SomeText/ABC/123'     -> 'ABC/123'
+    """
+    if not isinstance(reference, str):
+        return ""  # Return empty string if data is not a string (e.g., NaN)
+
+    # Find all sequences of exactly 3 uppercase letters
+    three_letter_codes = re.findall(r'[A-Z]{3}', reference)
+
+    if not three_letter_codes:
+        return "" # If no 3-letter code is found, return empty
+
+    # The key is the *last* 3-letter code found in the string
+    last_code = three_letter_codes[-1]
+
+    # Find the starting position of this last code from the right
+    start_index = reference.rfind(last_code)
+
+    # Get the rest of the string from that point
+    raw_result = reference[start_index:]
+
+    # Clean up the end by splitting at the first space and taking the first part
+    cleaned_result = raw_result.split(' ', 1)[0]
+    
+    return cleaned_result.strip()
 
 # --- APP TITLE ---
 st.title("🤝 Contract & Transaction Reconciliation Tool")
@@ -48,10 +75,13 @@ with col1:
                 df1_processed['Total Value'] = df1_processed['Rent As per Contract'].fillna(0) + df1_processed['Service as per Contract'].fillna(0)
                 for col in ['Start Date', 'End Date']:
                     df1_processed[col] = pd.to_datetime(df1_processed[col], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
+                
+                # Use the new intelligent extraction function
                 df1_processed['Contract Code'] = df1_processed['Contract Reference'].apply(extract_code_from_ref)
 
                 st.subheader("Summary Overview")
                 st.dataframe(df1_processed[['Tenants', 'Contract Reference', 'Contract Code']], use_container_width=True)
+                
                 st.subheader("Full Processed Contract Data")
                 st.dataframe(df1_processed)
 
@@ -64,7 +94,7 @@ with col1:
         except Exception as e:
             st.error(f"An error occurred processing the contract file: {e}")
 
-# --- COLUMN 2: TRANSACTION LOG (UPDATED) ---
+# --- COLUMN 2: TRANSACTION LOG ---
 with col2:
     st.header("2. Process Transaction Log")
     uploaded_file_2 = st.file_uploader("Upload Transaction Log Excel File", type="xlsx", key="transactions")
@@ -73,21 +103,19 @@ with col2:
         try:
             df2 = pd.read_excel(uploaded_file_2, engine='openpyxl')
             
-            # *** CHANGE 1: Update the list of expected column names ***
+            # Use the correct column names for the transaction file
             cols_2 = ['Date', 'Transaction Type', 'No.', 'Name', 'Amount']
             
             missing_cols_2 = [col for col in cols_2 if col not in df2.columns]
             if not missing_cols_2:
-                # *** CHANGE 2: Use "Transaction Type" for filtering ***
                 df2_invoices = df2[df2['Transaction Type'].str.lower() == 'invoice'].copy()
                 initial_invoice_count = len(df2_invoices)
                 
-                # *** CHANGE 3: Use "No." for extracting the contract code ***
+                # Use the new intelligent extraction function on the 'No.' column
                 df2_invoices['Contract Code'] = df2_invoices['No.'].apply(extract_code_from_ref)
                 
                 df2_invoices['Date'] = pd.to_datetime(df2_invoices['Date'], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
                 
-                # *** CHANGE 4: Use "No." in the final displayed table ***
                 df2_final = df2_invoices[['Date', 'Name', 'No.', 'Contract Code', 'Amount']]
 
                 st.subheader("Count Check")
