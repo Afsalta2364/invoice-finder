@@ -21,21 +21,30 @@ def convert_df_to_csv(df):
 
 def extract_code_from_ref(reference):
     """
-    Extracts a contract code based on finding the last 3-letter uppercase block.
+    Extracts a contract code based on finding the last segment that starts
+    with an uppercase letter and can contain special characters.
+    - 'JA588/AUG24/RIS/125'  -> 'RIS/125'
+    - 'R25/KSV/227 - 6'       -> 'KSV/227'
+    - 'Y22/S&A/261 - 10'      -> 'S&A/261'
     """
     if not isinstance(reference, str):
         return ""
 
-    three_letter_codes = re.findall(r'[A-Z]{3}', reference)
-    if not three_letter_codes:
+    # New, more flexible regex pattern
+    pattern = r'[A-Z][A-Z0-9&_-]*'
+    
+    codes_found = re.findall(pattern, reference)
+
+    if not codes_found:
         return ""
 
-    last_code = three_letter_codes[-1]
-    start_index = reference.rfind(last_code)
+    last_code_part = codes_found[-1]
+    start_index = reference.rfind(last_code_part)
     raw_result = reference[start_index:]
     cleaned_result = raw_result.split(' ', 1)[0]
     
     return cleaned_result.strip()
+
 
 # --- APP TITLE ---
 st.title("🤝 Contract & Transaction Reconciliation Tool")
@@ -106,7 +115,6 @@ with col2:
                 extracted_code_count = (df2_final['Contract Code'] != '').sum()
                 metric_col2.metric("Total Codes Extracted", extracted_code_count)
 
-                # --- NEW: IDENTIFY AND DISPLAY MISSING CODES ---
                 st.subheader("⚠️ Invoices with Extraction Issues")
                 missing_codes_df = df2_final[df2_final['Contract Code'] == '']
                 num_missing = len(missing_codes_df)
@@ -120,7 +128,6 @@ with col2:
                         st.dataframe(missing_codes_df[['Date', 'Name', 'No.', 'Amount']])
                     else:
                         st.success("✅ Great! All invoices have a valid, extractable contract code.")
-                # --- END OF NEW SECTION ---
 
                 st.subheader("Processed Invoice Data")
                 st.dataframe(df2_final)
