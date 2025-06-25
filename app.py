@@ -7,7 +7,7 @@ import re  # Import the regular expression module
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="Contract & Transaction Processor",
+    page_title="Contract & Transaction Reconciliation",
     page_icon="🤝",
     layout="wide"
 )
@@ -22,11 +22,6 @@ def convert_df_to_csv(df):
 def extract_code_from_ref(reference):
     """
     Finds the last occurrence of the pattern 'CODE/NUMBER' in a string.
-    - 'JA588/AUG24/RIS/125'  -> 'RIS/125'
-    - 'R25/KSV/227 - 6'       -> 'KSV/227'
-    - 'Y22/S&A/261 - 10'      -> 'S&A/261'
-    - 'Y22/NAE/125-10Feb'     -> 'NAE/125'
-    - 'B23/INN/136-1Feb'      -> 'INN/136'
     """
     if not isinstance(reference, str):
         return ""
@@ -39,12 +34,16 @@ def extract_code_from_ref(reference):
     else:
         return ""
 
-
 # --- APP TITLE ---
 st.title("🤝 Contract & Transaction Reconciliation Tool")
-st.write("Upload the Tenancy Contract file and the Transaction Log file to process and prepare them for reconciliation.")
+st.write("Upload the Tenancy Contract file and the Transaction Log file to process and compare them.")
 
-# --- UI LAYOUT ---
+# --- INITIALIZE DATAFRAMES ---
+# We initialize these as None so we can check if they've been processed later
+df1_processed = None
+df2_final = None
+
+# --- UI LAYOUT FOR FILE UPLOADS ---
 col1, col2 = st.columns(2)
 
 # --- COLUMN 1: TENANCY CONTRACTS ---
@@ -62,6 +61,7 @@ with col1:
             
             missing_cols_1 = [col for col in cols_1 if col not in df1.columns]
             if not missing_cols_1:
+                # Assign the processed dataframe to our variable
                 df1_processed = df1[cols_1].copy()
                 df1_processed['Total Value'] = df1_processed['Rent As per Contract'].fillna(0) + df1_processed['Service as per Contract'].fillna(0)
                 for col in ['Start Date', 'End Date']:
@@ -101,6 +101,7 @@ with col2:
                 
                 df2_invoices['Contract Code'] = df2_invoices['No.'].apply(extract_code_from_ref)
                 df2_invoices['Date'] = pd.to_datetime(df2_invoices['Date'], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
+                # Assign the final processed dataframe to our variable
                 df2_final = df2_invoices[['Date', 'Name', 'No.', 'Contract Code', 'Amount']]
 
                 st.subheader("Count Check")
@@ -111,17 +112,11 @@ with col2:
 
                 st.subheader("⚠️ Invoices with Extraction Issues")
                 missing_codes_df = df2_final[df2_final['Contract Code'] == '']
-                num_missing = len(missing_codes_df)
-
-                with st.expander(f"Found {num_missing} invoices with issues. Click to see details."):
+                with st.expander(f"Found {len(missing_codes_df)} invoices with issues. Click to see details."):
                     if not missing_codes_df.empty:
-                        st.warning(
-                            "The following invoices could not be processed automatically. "
-                            "Review the 'No.' column for formatting issues."
-                        )
                         st.dataframe(missing_codes_df[['Date', 'Name', 'No.', 'Amount']])
                     else:
-                        st.success("✅ Great! All invoices have a valid, extractable contract code.")
+                        st.success("✅ All invoices have a valid, extractable contract code.")
 
                 st.subheader("Processed Invoice Data")
                 st.dataframe(df2_final)
@@ -130,8 +125,55 @@ with col2:
                 st.download_button("📥 Download Invoice Data (CSV)", csv_data_2, "processed_invoices.csv", "text/csv", key='download-invoices')
             else:
                 st.error(f"Transaction log missing columns: **{', '.join(missing_cols_2)}**")
-                st.info("Please check for typos, extra spaces, or case sensitivity in your Excel file's headers.")
                 st.write("Columns found in your file:", df2.columns.tolist())
 
         except Exception as e:
             st.error(f"An error occurred processing the transaction file: {e}")
+
+
+# --- NEW SECTION: RECONCILIATION ---
+# This block will only run if both DataFrames have been successfully created.
+st.divider() # Adds a horizontal line for visual separation
+
+if df1_processed is not None and df2_final is not None:
+    st.header("📊 Reconciliation Results")
+    
+    # Get unique, non-empty contract codes from both dataframes
+    codes_in_contracts = set(df1_processed[df1_processed['Contract Code'] != '']['Contract Code'].unique())
+    codes_in_invoices = set(df2_final[df2_final['Contract Code'] != '']['Contract Code'].unique())
+    
+    # Find the differences using set operations
+    matched_codes = codes_in_contracts.intersection(codes_in_invoices)
+    missing_from_invoices = codes_in_contracts - codes_in_invoices
+    unmatched_invoices = codes_in_invoices - codes_in_contracts
+    
+    # --- Display Summary Metrics ---
+    st.subheader("Summary Metrics")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Codes in Contracts", len(codes_in_contracts))
+    m2.metric("Codes in Invoices", len(codes_in_invoices))
+    m3.metric("Matched Codes", len(matched_codes))
+    m4.metric("Total Mismatches", len(missing_from_invoices) + len(unmatched_invoices))
+    
+    st.divider()
+    
+    # --- Display Detailed Mismatch Lists ---
+    reco_col1, reco_col2 = st.columns(2)
+    
+    with reco_col1:
+        st.subheader(f"⚠️ Contracts Missing from Invoice Log ({len(missing_from_invoices)})")
+        if not missing_from_invoices:
+            st.success("✅ All contracts have a matching invoice.")
+        else:
+            # Show the contract details for the missing items
+            missing_details = df1_processed[df1_processed['Contract Code'].isin(missing_from_invoices)]
+            st.dataframe(missing_details[['Tenants', 'Contract Code', 'Total Value']], use_container_width=True)
+
+    with reco_col2:
+        st.subheader(f"⚠️ Invoices Without a Matching Contract ({len(unmatched_invoices)})")
+        if not unmatched_invoices:
+            st.success("✅ All invoices have a matching contract.")
+        else:
+            # Show the invoice details for the unmatched items
+            unmatched_details = df2_final[df2_final['Contract Code'].isin(unmatched_invoices)]
+            st.dataframe(unmatched_details[['Name', 'Contract Code', 'Date', 'Amount']], use_container_width=True)
