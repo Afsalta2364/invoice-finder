@@ -56,11 +56,12 @@ tab_upload, tab_reco, tab_schedule, tab_data_view = st.tabs([
     "📂 **Step 1: File Upload**",
     "📈 **Step 2: Reconciliation**",
     "📅 **Step 3: Payment Schedule**",
-    "📄 **View Full Data**"
+    "📄 **Step 4: View Full Data**"
 ])
 
 # --- TAB 1: FILE UPLOAD (No Changes) ---
 with tab_upload:
+    # ... code for tab 1 remains the same ...
     st.header("Upload Your Files Here")
     col1, col2 = st.columns(2, gap="large")
     with col1:
@@ -102,7 +103,7 @@ with tab_upload:
 
 # --- TAB 2: RECONCILIATION (No Changes) ---
 with tab_reco:
-    # ... Reconciliation logic remains the same ...
+    # ... code for tab 2 remains the same ...
     st.header("Reconciliation Dashboard")
     if st.session_state.df1_processed is not None and st.session_state.df2_final is not None:
         df1_p = st.session_state.df1_processed
@@ -136,90 +137,129 @@ with tab_reco:
     else:
         st.info("⬅️ Please upload and process both files in the 'File Upload' tab to view reconciliation results.")
 
-# --- TAB 3: PAYMENT SCHEDULE (Significantly Updated) ---
+# --- TAB 3: PAYMENT SCHEDULE (No Changes) ---
 with tab_schedule:
+    # ... code for tab 3 remains the same ...
     st.header("View Contract Schedule & Status")
-    
     if st.session_state.df1_processed is not None:
         df1_p = st.session_state.df1_processed
         contract_codes = sorted([code for code in df1_p['Contract Code'].unique() if code])
-        selected_code = st.selectbox(
-            "Select a Contract Code to analyze:", 
-            options=contract_codes,
-            index=None, placeholder="Choose a contract..."
-        )
-
+        selected_code = st.selectbox( "Select a Contract Code to analyze:", options=contract_codes, index=None, placeholder="Choose a contract...")
         if selected_code:
             contract_details = df1_p[df1_p['Contract Code'] == selected_code].iloc[0]
             schedule_df = generate_payment_schedule(contract_details)
-
-            # --- Display Main Contract Details ---
             st.subheader(f"Contract Details: {selected_code}")
             st.text_input("Tenant", contract_details['Tenants'], disabled=True)
             c1, c2, c3 = st.columns(3)
             c1.metric("Start Date", contract_details['Start Date'])
             c2.metric("End Date", contract_details['End Date'])
             c3.metric("Installment Amount", f"{contract_details['Installment Amount']:,.2f}")
-            
             st.divider()
-
-            # --- NEW: As-Of-Today Analysis (only if invoice file is present) ---
             if st.session_state.df2_final is not None and not schedule_df.empty:
                 st.subheader("As-of-Today Status Analysis")
                 df2_f = st.session_state.df2_final
                 today = pd.to_datetime('today')
-
-                # 1. Calculate Estimated Value
                 expected_to_date_df = schedule_df[schedule_df['PaymentDate'] <= today]
                 estimated_value_as_of_today = expected_to_date_df['Amount'].sum()
-
-                # 2. Get Actual Payments
                 invoices_for_contract = df2_f[df2_f['Contract Code'] == selected_code].copy()
                 actual_paid_total = invoices_for_contract['Amount'].sum()
-                
-                # Display Metrics
                 stat1, stat2, stat3 = st.columns(3)
                 stat1.metric("Expected Value (To Date)", f"{estimated_value_as_of_today:,.2f}")
                 stat2.metric("Actual Invoiced (Total)", f"{actual_paid_total:,.2f}")
-                
-                # 3. Find Missing Invoices
                 if not expected_to_date_df.empty:
                     invoices_for_contract['Payment Month'] = pd.to_datetime(invoices_for_contract['Date'], dayfirst=True).dt.strftime('%B %Y')
                     actual_payment_months = set(invoices_for_contract['Payment Month'])
-                    
                     missing_invoices_df = expected_to_date_df[~expected_to_date_df['Payment Month'].isin(actual_payment_months)]
                     stat3.metric("⚠️ Missing Invoices (To Date)", len(missing_invoices_df))
-                    
                     if not missing_invoices_df.empty:
                         with st.container(border=True):
                             st.error(f"**Missing Invoices for contract `{selected_code}`**")
-                            st.write("The following monthly payments were expected but not found in the transaction log:")
                             st.dataframe(missing_invoices_df[['Payment Month', 'Amount']], use_container_width=True)
-                
                 st.divider()
-
-            # --- Display Full Future Schedule ---
             st.subheader("Full Generated Payment Schedule")
             if not schedule_df.empty:
                 st.dataframe(schedule_df[['Payment Month', 'Amount']], use_container_width=True)
             else:
                 st.error("Could not generate a payment schedule. Check contract dates.")
-
     else:
         st.info("⬅️ Please upload and process the Tenancy Contracts file in the 'File Upload' tab first.")
 
-# --- TAB 4: VIEW FULL DATA (No Changes) ---
+# --- TAB 4: VIEW FULL DATA (UPDATED WITH DUAL FILTERS) ---
 with tab_data_view:
-    # ... View full data logic remains the same ...
-    st.header("Explore Processed Data")
-    if st.session_state.df1_processed is not None:
-        with st.expander("View Full Processed Contract Data", expanded=True):
-            st.dataframe(st.session_state.df1_processed)
-            st.download_button("📥 Download Contract Data (CSV)", convert_df_to_csv(st.session_state.df1_processed), "processed_contracts.csv", "text/csv", key='download-contracts-tab4')
-    else: st.info("No contract data processed yet.")
+    st.header("Explore and Filter Processed Data")
+
+    df1_p = st.session_state.df1_processed
+    df2_f = st.session_state.df2_final
+
+    # --- Create the filter widgets only if data is available ---
+    if df1_p is not None or df2_f is not None:
+        all_codes = set()
+        all_names = set()
+        
+        if df1_p is not None:
+            all_codes.update(df1_p[df1_p['Contract Code'] != '']['Contract Code'].unique())
+            all_names.update(df1_p[df1_p['Tenants'].notna()]['Tenants'].unique())
+        if df2_f is not None:
+            all_codes.update(df2_f[df2_f['Contract Code'] != '']['Contract Code'].unique())
+            all_names.update(df2_f[df2_f['Name'].notna()]['Name'].unique())
+        
+        sorted_codes = sorted(list(all_codes))
+        sorted_names = sorted(list(all_names))
+        
+        # --- Display filters in columns for a cleaner layout ---
+        filter_col1, filter_col2 = st.columns(2)
+        with filter_col1:
+            selected_codes = st.multiselect(
+                "Filter by Contract Code(s):",
+                options=sorted_codes,
+                placeholder="Select codes..."
+            )
+        with filter_col2:
+            selected_names = st.multiselect(
+                "Filter by Tenant/Name:",
+                options=sorted_names,
+                placeholder="Select names..."
+            )
+
+        # --- Apply filter logic ---
+        df1_display = df1_p.copy() if df1_p is not None else None
+        df2_display = df2_f.copy() if df2_f is not None else None
+
+        if selected_codes:
+            if df1_display is not None:
+                df1_display = df1_display[df1_display['Contract Code'].isin(selected_codes)]
+            if df2_display is not None:
+                df2_display = df2_display[df2_display['Contract Code'].isin(selected_codes)]
+        
+        if selected_names:
+            if df1_display is not None:
+                df1_display = df1_display[df1_display['Tenants'].isin(selected_names)]
+            if df2_display is not None:
+                df2_display = df2_display[df2_display['Name'].isin(selected_names)]
+        
+        st.divider()
+
+    # --- Display the potentially filtered tables ---
+    if df1_p is not None:
+        with st.expander("View Processed Contract Data", expanded=True):
+            st.dataframe(df1_display)
+            st.download_button(
+                f"📥 Download Filtered Contract Data ({len(df1_display)} rows)", 
+                convert_df_to_csv(df1_display), 
+                "filtered_contracts.csv", "text/csv", key='download-contracts-tab4'
+            )
+    else:
+        st.info("No contract data processed yet.")
+
     st.divider()
-    if st.session_state.df2_final is not None:
-        with st.expander("View Full Processed Invoice Data", expanded=True):
-            st.dataframe(st.session_state.df2_final)
-            st.download_button("📥 Download Invoice Data (CSV)", convert_df_to_csv(st.session_state.df2_final), "processed_invoices.csv", "text/csv", key='download-invoices-tab4')
-    else: st.info("No transaction data processed yet.")
+
+    if df2_f is not None:
+        with st.expander("View Processed Invoice Data", expanded=True):
+            st.dataframe(df2_display)
+            st.download_button(
+                f"📥 Download Filtered Invoice Data ({len(df2_display)} rows)", 
+                convert_df_to_csv(df2_display), 
+                "filtered_invoices.csv", "text/csv", key='download-invoices-tab4'
+            )
+    else:
+        st.info("No transaction data processed yet.")
