@@ -64,7 +64,7 @@ with col1:
         except Exception as e:
             st.error(f"An error occurred processing the contract file: {e}")
 
-# --- COLUMN 2: TRANSACTION LOG ---
+# --- COLUMN 2: TRANSACTION LOG (UPDATED) ---
 with col2:
     st.header("2. Process Transaction Log")
     uploaded_file_2 = st.file_uploader("Upload Transaction Log Excel File", type="xlsx", key="transactions")
@@ -73,15 +73,22 @@ with col2:
         try:
             df2 = pd.read_excel(uploaded_file_2, engine='openpyxl')
             
-            cols_2 = ['Date', 'Transaction', 'TypeNo.', 'Name', 'Amount']
+            # *** CHANGE 1: Update the list of expected column names ***
+            cols_2 = ['Date', 'Transaction Type', 'No.', 'Name', 'Amount']
             
             missing_cols_2 = [col for col in cols_2 if col not in df2.columns]
             if not missing_cols_2:
-                df2_invoices = df2[df2['Transaction'].str.lower() == 'invoice'].copy()
+                # *** CHANGE 2: Use "Transaction Type" for filtering ***
+                df2_invoices = df2[df2['Transaction Type'].str.lower() == 'invoice'].copy()
                 initial_invoice_count = len(df2_invoices)
-                df2_invoices['Contract Code'] = df2_invoices['TypeNo.'].apply(extract_code_from_ref)
+                
+                # *** CHANGE 3: Use "No." for extracting the contract code ***
+                df2_invoices['Contract Code'] = df2_invoices['No.'].apply(extract_code_from_ref)
+                
                 df2_invoices['Date'] = pd.to_datetime(df2_invoices['Date'], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
-                df2_final = df2_invoices[['Date', 'Name', 'TypeNo.', 'Contract Code', 'Amount']]
+                
+                # *** CHANGE 4: Use "No." in the final displayed table ***
+                df2_final = df2_invoices[['Date', 'Name', 'No.', 'Contract Code', 'Amount']]
 
                 st.subheader("Count Check")
                 metric_col1, metric_col2 = st.columns(2)
