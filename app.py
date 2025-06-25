@@ -22,29 +22,17 @@ def convert_df_to_csv(df):
 def extract_code_from_ref(reference):
     """
     Extracts a contract code based on finding the last 3-letter uppercase block.
-    - 'JA588/AUG24/RIS/125' -> 'RIS/125'
-    - 'R25/KSV/227 - 6'      -> 'KSV/227'
-    - 'SomeText/ABC/123'     -> 'ABC/123'
     """
     if not isinstance(reference, str):
-        return ""  # Return empty string if data is not a string (e.g., NaN)
+        return ""
 
-    # Find all sequences of exactly 3 uppercase letters
     three_letter_codes = re.findall(r'[A-Z]{3}', reference)
-
     if not three_letter_codes:
-        return "" # If no 3-letter code is found, return empty
+        return ""
 
-    # The key is the *last* 3-letter code found in the string
     last_code = three_letter_codes[-1]
-
-    # Find the starting position of this last code from the right
     start_index = reference.rfind(last_code)
-
-    # Get the rest of the string from that point
     raw_result = reference[start_index:]
-
-    # Clean up the end by splitting at the first space and taking the first part
     cleaned_result = raw_result.split(' ', 1)[0]
     
     return cleaned_result.strip()
@@ -75,8 +63,6 @@ with col1:
                 df1_processed['Total Value'] = df1_processed['Rent As per Contract'].fillna(0) + df1_processed['Service as per Contract'].fillna(0)
                 for col in ['Start Date', 'End Date']:
                     df1_processed[col] = pd.to_datetime(df1_processed[col], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
-                
-                # Use the new intelligent extraction function
                 df1_processed['Contract Code'] = df1_processed['Contract Reference'].apply(extract_code_from_ref)
 
                 st.subheader("Summary Overview")
@@ -103,7 +89,6 @@ with col2:
         try:
             df2 = pd.read_excel(uploaded_file_2, engine='openpyxl')
             
-            # Use the correct column names for the transaction file
             cols_2 = ['Date', 'Transaction Type', 'No.', 'Name', 'Amount']
             
             missing_cols_2 = [col for col in cols_2 if col not in df2.columns]
@@ -111,7 +96,6 @@ with col2:
                 df2_invoices = df2[df2['Transaction Type'].str.lower() == 'invoice'].copy()
                 initial_invoice_count = len(df2_invoices)
                 
-                # Use the new intelligent extraction function on the 'No.' column
                 df2_invoices['Contract Code'] = df2_invoices['No.'].apply(extract_code_from_ref)
                 
                 df2_invoices['Date'] = pd.to_datetime(df2_invoices['Date'], errors='coerce').dt.strftime('%d-%m-%Y').fillna('')
@@ -121,7 +105,12 @@ with col2:
                 st.subheader("Count Check")
                 metric_col1, metric_col2 = st.columns(2)
                 metric_col1.metric("Total Invoices in File", initial_invoice_count)
-                metric_col2.metric("Unique Contract Codes", df2_final['Contract Code'].nunique())
+                
+                # --- THIS IS THE UPDATED METRIC ---
+                # Count rows where a contract code was successfully extracted
+                extracted_code_count = (df2_final['Contract Code'] != '').sum()
+                metric_col2.metric("Total Codes Extracted", extracted_code_count)
+                # -----------------------------------
 
                 st.subheader("Processed Invoice Data")
                 st.dataframe(df2_final)
